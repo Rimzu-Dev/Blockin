@@ -105,7 +105,7 @@ public final class Level {
      * always finds it during generation (tree canopies may also stamp into
      * neighbouring chunks, which lazily generate in turn).
      */
-    public byte[] ensureChunk(int cx, int cz) {
+    public synchronized byte[] ensureChunk(int cx, int cz) {
         byte[] data = chunkBlocks.get(key(cx, cz));
         if (data != null) return data;
 
@@ -188,7 +188,7 @@ public final class Level {
         load(this.file);
     }
 
-    public void load(File saveFile) {
+    public synchronized void load(File saveFile) {
         File f = saveFile != null ? saveFile : new File("level.dat");
         if (!f.isFile()) return;
         try (DataInputStream in = new DataInputStream(new GZIPInputStream(new FileInputStream(f)))) {
@@ -305,7 +305,7 @@ public final class Level {
         save(this.file);
     }
 
-    public void save(File saveFile) {
+    public synchronized void save(File saveFile) {
         File f = saveFile != null ? saveFile : new File("level.dat");
         File parent = f.getParentFile();
         if (parent != null) parent.mkdirs();
@@ -339,7 +339,7 @@ public final class Level {
 
     // ------------------------------------------------------------- lighting
 
-    public void calcLightDepths(int x0, int y0, int x1, int y1) {
+    public synchronized void calcLightDepths(int x0, int y0, int x1, int y1) {
         for (int x = x0; x < x0 + x1; x++) {
             for (int z = y0; z < y0 + y1; z++) {
                 int cx = col(x);
@@ -375,13 +375,13 @@ public final class Level {
     // --------------------------------------------------------------- tiles
 
     /** True when a block occupies the cell (any block: solid, water, leaves...). */
-    public boolean isTile(int x, int y, int z) {
+    public synchronized boolean isTile(int x, int y, int z) {
         if (y < 0 || y >= depth) return false;
         return getBlock(x, y, z) != 0;
     }
 
     /** Raw block id at a position: 0 = air. */
-    public int getTile(int x, int y, int z) {
+    public synchronized int getTile(int x, int y, int z) {
         if (y < 0 || y >= depth) return 0;
         return getBlock(x, y, z);
     }
@@ -392,7 +392,7 @@ public final class Level {
     }
 
     /** True when the tile is physically solid (blocks movement). Liquids are not. */
-    public boolean isSolidTile(int x, int y, int z) {
+    public synchronized boolean isSolidTile(int x, int y, int z) {
         if (y < 0 || y >= depth) return false;
         byte b = ensureChunk(col(x), col(z))[index(lok(x), y, lok(z))];
         int type = b & 0xFF;
@@ -400,26 +400,26 @@ public final class Level {
     }
 
     /** True when the cell holds water. */
-    public boolean isWater(int x, int y, int z) {
+    public synchronized boolean isWater(int x, int y, int z) {
         if (y < 0 || y >= depth) return false;
         return ensureChunk(col(x), col(z))[index(lok(x), y, lok(z))]
                 == (byte) com.insanestudios.blockin.Blocks.BlockLoader.WATER;
     }
 
     /** True when the cell holds a liquid the player can swim through. */
-    public boolean isLiquid(int x, int y, int z) {
+    public synchronized boolean isLiquid(int x, int y, int z) {
         if (y < 0 || y >= depth) return false;
         int type = ensureChunk(col(x), col(z))[index(lok(x), y, lok(z))] & 0xFF;
         return com.insanestudios.blockin.Blocks.BlockLoader.isLiquid(type);
     }
 
     /** True when the tile blocks skylight (solid blocks and water). */
-    public boolean isLightBlocker(int x, int y, int z) {
+    public synchronized boolean isLightBlocker(int x, int y, int z) {
         return isTile(x, y, z);
     }
 
     /** Sets a tile and notifies listeners that renderers must repaint it. */
-    public void setTile(int x, int y, int z, int type) {
+    public synchronized void setTile(int x, int y, int z, int type) {
         if (y < 0 || y >= depth) return;
         byte[] data = ensureChunk(col(x), col(z));
         data[index(lok(x), y, lok(z))] = (byte) type;
@@ -430,7 +430,7 @@ public final class Level {
     }
 
     /** Package-private raw write used by terrain generation (no listener fan-out). */
-    void setRaw(int x, int y, int z, int type) {
+    synchronized void setRaw(int x, int y, int z, int type) {
         if (y < 0 || y >= depth) return;
         ensureChunk(col(x), col(z))[index(lok(x), y, lok(z))] = (byte) type;
     }
@@ -439,19 +439,19 @@ public final class Level {
      * Highest solid block in a column (i.e. the terrain surface; water and air
      * are skipped). Returns 0 when the column has no ground.
      */
-    public int getSurfaceY(int x, int z) {
+    public synchronized int getSurfaceY(int x, int z) {
         int y = this.depth - 1;
         while (y > 0 && !isSolidTile(x, y, z)) y--;
         return y;
     }
 
     /** True when the column's terrain surface sits below sea level. */
-    public boolean isOcean(int x, int z) {
+    public synchronized boolean isOcean(int x, int z) {
         return getSurfaceY(x, z) < TerrainGen.SEA_LEVEL;
     }
 
     /** All solid unit cubes overlapping the given box. */
-    public List<Box> getCubes(Box box) {
+    public synchronized List<Box> getCubes(Box box) {
         List<Box> cubes = new ArrayList<>();
 
         int x0 = (int) box.x0;

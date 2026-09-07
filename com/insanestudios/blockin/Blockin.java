@@ -10,9 +10,14 @@ import com.insanestudios.blockin.Blocks.Block;
 import com.insanestudios.blockin.Blocks.BlockLoader;
 import com.insanestudios.blockin.GameHUD;
 import com.insanestudios.blockin.MainMenu;
+import com.insanestudios.blockin.Models.Model;
+import com.insanestudios.blockin.Models.ModelLoader;
 import com.insanestudios.blockin.Sound.SoundEngine;
 import com.insanestudios.blockin.Update;
 import com.insanestudios.blockin.WindowPatch;
+import com.insanestudios.blockin.net.GameClient;
+import com.insanestudios.blockin.net.GameServer;
+import com.insanestudios.blockin.net.RemotePlayerState;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.LWJGLException;
 import org.lwjgl.input.Keyboard;
@@ -39,6 +44,8 @@ public final class Blockin {
 
     private static final float[] FOG_COLOR = {0.60F, 0.66F, 0.72F};
     private static final long OPERATION_DELAY_MS = 180L;
+    /** Extra yaw so the remote avatar's front tracks where the remote player looks. */
+    private static final float REMOTE_YAW_OFFSET = 180.0F;
 
     private final GameClock timer = new GameClock(60.0F);
     private final FloatBuffer fogBuffer =
@@ -51,6 +58,11 @@ public final class Blockin {
     private Level level;
     private LevelRenderer levelRenderer;
     private PlayerController player;
+    private GameClient net;
+    private GameServer hostServer;
+
+    private boolean debugOverlay = false;
+    private boolean wasDebugKeyDown = false;
 
     private HitResult hit;
     private boolean started = false;
@@ -60,6 +72,17 @@ public final class Blockin {
     private int dbgJumpTick = 0;
 
     public static void main(String[] args) {
+        for (String arg : args) {
+            if (arg.startsWith("--join")) {
+                String target = arg.substring("--join".length()).trim();
+                if (target.startsWith("=")) {
+                    target = target.substring(1);
+                }
+                if (!target.isEmpty()) {
+                    System.setProperty("blockin.join", target);
+                }
+            }
+        }
         Blockin game = null;
         try {
             game = new Blockin();
@@ -110,6 +133,9 @@ public final class Blockin {
             name = SaveManager.nextWorldName();
         }
         long seed = new Random().nextLong();
+        if (net != null) {
+            seed = net.seed();
+        }
         java.io.File saveFile = SaveManager.levelFile(name);
         boolean wantLoad = load && saveFile.isFile();
         // Loading far chunks must regenerate from the world's own seed so the
@@ -125,6 +151,9 @@ public final class Blockin {
         level = new Level(128, 64, 128, seed, saveFile, wantLoad);
         levelRenderer = new LevelRenderer(level);
         player = new PlayerController(level);
+        if (net != null) {
+            net.bind(level);
+        }
 
         Level.PlayerState sp = level.savedPlayer();
         if (sp != null) {
@@ -155,6 +184,80 @@ public final class Blockin {
         lastOperate = 0L;
     }
 
+    /** Connects to the server typed on the MULTIPLAYER screen (or the
+     *  {@code --join} CLI address) and builds the world from its seed. */
+    private void joinGame() {
+        String cli = System.getProperty("blockin.join");
+        String target = (cli != null && !cli.trim().isEmpty())
+                ? cli.trim() : MainMenu.joinAddress();
+        if (target.trim().isEmpty()) {
+            MainMenu.setJoinError("Invalid address");
+            return;
+        }
+        String host = target.trim();
+        int port = GameServer.DEFAULT_PORT;
+
+        int colon = target.lastIndexOf(':');
+        if (colon >= 0) {
+            host = target.substring(0, colon).trim();
+            try {
+                port = Integer.parseInt(target.substring(colon + 1).trim());
+            } catch (NumberFormatException e) {
+                MainMenu.setJoinError("Invalid address");
+                return;
+            }
+        }
+        if (host.isEmpty()) {
+            MainMenu.setJoinError("Invalid address");
+            return;
+        }
+        connectTo(host, port, "Could not connect:");
+    }
+
+    /** Shared join/starth path: connect the client, then enter the world. */
+    private void connectTo(String host, int port, String failurePrefix) {
+        try {
+            net = GameClient.connect(host, port);
+        } catch (java.io.IOException e) {
+            MainMenu.clearChoice();
+            String reason = e.getMessage();
+            MainMenu.setJoinError(failurePrefix
+                    + (reason != null && !reason.isEmpty() ? " " + reason : ""));
+            return;
+        }
+        System.out.println("[Join] connected to " + host + ":" + port + " seed=" + net.seed());
+        buildWorld(false);
+    }
+
+    /** Starts an in-process server on the default port and plays on it. */
+    private void hostGame() {
+        if (hostServer != null) {
+            hostServer.stop();
+            hostServer = null;
+        }
+
+        final GameServer server;
+        try {
+            server = new GameServer(GameServer.DEFAULT_PORT, GameServer.SHARED_SEED,
+                    128, 64, 128);
+            server.loadBlocks();
+        } catch (java.io.IOException e) {
+            MainMenu.setJoinError("Could not host: port already in use");
+            return;
+        }
+
+        Thread hostThread = new Thread(server::start, "blockin-net-host");
+        hostThread.setDaemon(true);
+        hostThread.start();
+
+        connectTo("localhost", server.port(), "Could not host:");
+        if (net != null) {
+            hostServer = server;
+        } else {
+            server.stop();
+        }
+    }
+
     // ------------------------------------------------------------ loop
 
     public void run() {
@@ -182,6 +285,8 @@ public final class Blockin {
             switch (Update.menuChoice()) {
                 case MainMenu.PLAY -> buildWorld(true);
                 case MainMenu.NEW_WORLD -> buildWorld(false);
+                case MainMenu.JOIN -> joinGame();
+                case MainMenu.HOST_GAME -> hostGame();
                 case MainMenu.QUIT -> closeRequested = true;
                 default -> {
                 }
@@ -190,6 +295,10 @@ public final class Blockin {
         }
 
         if (!started) return;
+
+        boolean f3down = Keyboard.isKeyDown(Keyboard.KEY_F3);
+        if (f3down && !wasDebugKeyDown) debugOverlay = !debugOverlay;
+        wasDebugKeyDown = f3down;
 
         boolean inventoryOpen = GameHUD.isInventoryOpen();
         if (inventoryOpen) {
@@ -209,6 +318,11 @@ public final class Blockin {
         }
 
         player.tick();
+        if (net != null) {
+            net.sendInput(player.lastInput);
+            net.sendSelfState(player.x, player.bb.y0, player.z, player.yRot, player.xRot);
+            net.drainPendingBlocks();
+        }
         for (Mob_Pig pig : pigs) {
             pig.tick();
         }
@@ -263,6 +377,9 @@ public final class Blockin {
         if (before == 0) return;
 
         level.setTile(x, y, z, 0);
+        if (net != null) {
+            net.sendBlock(x, y, z, 0);
+        }
         Block b = BlockLoader.get(before);
         SoundEngine.playBreak(b != null ? b.getBreakSound() : "Stone");
         WaterSystem.onBlockChanged(level, x, y, z);
@@ -292,6 +409,9 @@ public final class Blockin {
         if (player.bb.intersects(box)) return;
 
         level.setTile(x, y, z, type);
+        if (net != null) {
+            net.sendBlock(x, y, z, type);
+        }
         Block b = BlockLoader.get(type);
         SoundEngine.playPlace(b != null ? b.getPlaceSound() : "Stone");
         WaterSystem.onBlockChanged(level, x, y, z);
@@ -338,11 +458,72 @@ public final class Blockin {
             pig.render();
         }
 
+        if (net != null) {
+            renderRemotePlayers();
+        }
+
         if (hit != null) {
             levelRenderer.renderHit(hit);
         }
 
         GL11.glDisable(GL11.GL_BLEND);
+    }
+
+    /** Other players drawn as the "Player" FBX model (feet-anchored, yaw only),
+     *  falling back to a red placeholder box if the model is missing. */
+    private void renderRemotePlayers() {
+        GL11.glDisable(GL11.GL_CULL_FACE);
+        GL11.glDisable(GL11.GL_TEXTURE_2D);
+        Model playerModel = ModelLoader.models.get("Player");
+        if (playerModel != null) {
+            // FBX exports rarely match the block-unit scale; uniform-normalize
+            // the loaded geometry to humanoid height and seat its feet on the
+            // remote player's feet (r.y). scale keeps the model's proportions.
+            float scale = 1.8F / playerModel.heightY;
+            float feet = playerModel.feetY * scale;
+            for (RemotePlayerState r : net.remotePlayers()) {
+                GL11.glPushMatrix();
+                GL11.glTranslatef(r.x, r.y - feet, r.z);
+                GL11.glScalef(scale, scale, scale);
+                GL11.glRotatef(r.yRot + REMOTE_YAW_OFFSET, 0.0F, 1.0F, 0.0F);
+                playerModel.render();
+                GL11.glPopMatrix();
+            }
+        } else {
+            GL11.glColor4f(1.0F, 0.25F, 0.25F, 1.0F);
+            for (RemotePlayerState r : net.remotePlayers()) {
+                GL11.glPushMatrix();
+                GL11.glTranslatef(r.x, r.y, r.z);
+                GL11.glRotatef(r.yRot, 0.0F, 1.0F, 0.0F);
+
+                float hw = 0.3F;
+                float h = 1.0F;
+                GL11.glBegin(GL11.GL_QUADS);
+                GL11.glVertex3f(-hw, 0, hw);
+                GL11.glVertex3f(hw, 0, hw);
+                GL11.glVertex3f(hw, h, hw);
+                GL11.glVertex3f(-hw, h, hw);
+                GL11.glVertex3f(-hw, 0, -hw);
+                GL11.glVertex3f(-hw, h, -hw);
+                GL11.glVertex3f(hw, h, -hw);
+                GL11.glVertex3f(hw, 0, -hw);
+                GL11.glVertex3f(-hw, 0, -hw);
+                GL11.glVertex3f(-hw, 0, hw);
+                GL11.glVertex3f(-hw, h, hw);
+                GL11.glVertex3f(-hw, h, -hw);
+                GL11.glVertex3f(hw, 0, -hw);
+                GL11.glVertex3f(hw, h, -hw);
+                GL11.glVertex3f(hw, h, hw);
+                GL11.glVertex3f(hw, 0, hw);
+                GL11.glVertex3f(-hw, h, -hw);
+                GL11.glVertex3f(hw, h, -hw);
+                GL11.glVertex3f(hw, h, hw);
+                GL11.glVertex3f(-hw, h, hw);
+                GL11.glEnd();
+                GL11.glPopMatrix();
+            }
+        }
+        GL11.glEnable(GL11.GL_TEXTURE_2D);
     }
 
     private void setupFog(float far) {
@@ -360,6 +541,92 @@ public final class Blockin {
         if (started && !Update.menuActive() && !GameHUD.isInventoryOpen()) {
             drawCrosshair();
         }
+
+        if (debugOverlay) {
+            renderNetworkDebug();
+        }
+    }
+
+    // ------------------------------------------------------- network debug
+
+    /**
+     * Read-only diagnostic overlay (F3 toggles) that prints every player this
+     * instance currently knows about — its own player plus every remote
+     * received from the server — one line each. Purely cosmetic; touches no
+     * sync/broadcast logic. Rows for disconnected players stay visible with
+     * a growing {@code age} so staleness is obvious.
+     */
+    private void renderNetworkDebug() {
+        int w = Display.getWidth();
+        int h = Display.getHeight();
+
+        GL11.glDisable(GL11.GL_DEPTH_TEST);
+        GL11.glMatrixMode(GL11.GL_PROJECTION);
+        GL11.glPushMatrix();
+        GL11.glLoadIdentity();
+        GL11.glOrtho(0, w, h, 0, -1, 1);
+        GL11.glMatrixMode(GL11.GL_MODELVIEW);
+        GL11.glPushMatrix();
+        GL11.glLoadIdentity();
+
+        String localHash = Integer.toHexString(System.identityHashCode(player)).toLowerCase();
+        if (localHash.length() > 6) localHash = localHash.substring(localHash.length() - 6);
+
+        int lines = 1;
+        if (net != null) {
+            lines += net.remotePlayers().size();
+        }
+        int lineH = 18;
+        int panelW = 460;
+        int panelH = 10 + lines * lineH + 10;
+        int px = 12;
+        int py = 40;
+
+        GameHUD.UI.modernPanel(px, py, panelW, panelH, 0.72F);
+
+        int y = py + 10 + lineH / 2 - 6;
+        MainMenu.drawDynamicText("NETWORK PLAYERS  (F3 to hide)", px + 14, py + 6, 11,
+                new java.awt.Color(0, 200, 255), false);
+
+        y = py + 10 + lineH;
+        MainMenu.drawDynamicText("local  id=" + (net == null ? "?" : net.myId())
+                        + " hash=" + localHash
+                        + "  pos=(" + fmt(player.x) + ", " + fmt(player.bb.y0) + ", " + fmt(player.z) + ")"
+                        + "  yaw=" + fmt1(player.yRot)
+                        + "  LOCAL  age=0",
+                px + 14, y, 12, new java.awt.Color(220, 255, 220), false);
+
+        if (net != null) {
+            int row = 1;
+            for (RemotePlayerState r : net.remotePlayers()) {
+                y = py + 10 + lineH * (row + 1);
+                long age = net.remoteAgeMs(r.id);
+                boolean stale = age > 2000;
+                String line = "id=" + r.id
+                        + " hash=" + net.remoteHash(r.id)
+                        + "  pos=(" + fmt(r.x) + ", " + fmt(r.y) + ", " + fmt(r.z) + ")"
+                        + "  yaw=" + fmt1(r.yRot)
+                        + "  REMOTE  age=" + age;
+                MainMenu.drawDynamicText(line, px + 14, y, 12,
+                        stale ? new java.awt.Color(255, 150, 100) : new java.awt.Color(255, 255, 255),
+                        false);
+                row++;
+            }
+        }
+
+        GL11.glMatrixMode(GL11.GL_PROJECTION);
+        GL11.glPopMatrix();
+        GL11.glMatrixMode(GL11.GL_MODELVIEW);
+        GL11.glPopMatrix();
+        GL11.glEnable(GL11.GL_DEPTH_TEST);
+    }
+
+    private static String fmt(float v) {
+        return String.format("%.2f", v);
+    }
+
+    private static String fmt1(float v) {
+        return String.format("%.1f", v);
     }
 
     private void drawCrosshair() {
@@ -405,6 +672,13 @@ public final class Blockin {
 
     private void cleanup() {
         try {
+            if (net != null) {
+                net.close();
+            }
+            if (hostServer != null) {
+                hostServer.stop();
+                hostServer = null;
+            }
             if (level != null) {
                 if (player != null) {
                     level.setSavedPlayer(player.bb.centerX(), player.bb.y0,

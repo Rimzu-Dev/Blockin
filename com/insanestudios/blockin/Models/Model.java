@@ -20,6 +20,10 @@ public final class Model {
     public final float[] uvs;
     public int tex = -1;
     public float r = 1f, g = 1f, b = 1f;
+    /** Lowest vertex Y in bind pose; render callers translate to seat it on the ground. */
+    public float feetY = 0f;
+    /** Total height (max minus min vertex Y) in bind pose. */
+    public float heightY = 1f;
 
     // --- skinning ------------------------------------------------------
     public Bone[] bones;
@@ -78,6 +82,7 @@ public final class Model {
 
     /** Draw the mesh with the caller's transform already applied. */
     public void render() {
+        GL11.glDisable(GL11.GL_CULL_FACE);
         if (tex >= 0) {
             GL11.glEnable(GL11.GL_TEXTURE_2D);
             GL11.glBindTexture(GL11.GL_TEXTURE_2D, tex);

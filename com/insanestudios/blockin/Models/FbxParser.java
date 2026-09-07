@@ -70,12 +70,35 @@ public final class FbxParser {
 
     private static FbxNode parseBinary(byte[] data) {
         ByteBuffer bb = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN);
-        int[] p = {BINARY_HEADER_LEN + 1};
+        int[] p = {firstRecordOffset(data)};
         FbxNode root = new FbxNode("__root__");
         while (p[0] + 13 <= data.length && bb.getInt(p[0]) > 0) {
             readBinaryNode(bb, p, root);
         }
         return root;
+    }
+
+    /** Locates the first top-level record; the header is 23 bytes on most
+     *  files but 27 on some variants, so scan a few bytes for a sane record. */
+    private static int firstRecordOffset(byte[] data) {
+        for (int off = BINARY_HEADER_LEN + 1; off < BINARY_HEADER_LEN + 8; off++) {
+            if (off + 13 > data.length) break;
+            long end = data[off] & 0xFFL | (data[off + 1] & 0xFFL) << 8
+                    | (data[off + 2] & 0xFFL) << 16 | (data[off + 3] & 0xFFL) << 24;
+            if (end <= off + 13 || end > data.length) continue;
+            int nameLen = data[off + 12] & 0xFF;
+            if (nameLen < 1 || nameLen > 200) continue;
+            boolean printable = true;
+            for (int i = 0; i < nameLen; i++) {
+                char c = (char) (data[off + 13 + i] & 0xFF);
+                if (c < 32 || c > 126) {
+                    printable = false;
+                    break;
+                }
+            }
+            if (printable) return off;
+        }
+        return BINARY_HEADER_LEN + 1;
     }
 
     private static void readBinaryNode(ByteBuffer bb, int[] p, FbxNode parent) {
@@ -436,14 +459,28 @@ public final class FbxParser {
             throw new IllegalArgumentException("FBX contains no mesh geometry");
         }
         int totalTris = 0;
-        for (FbxNode g : s.geometries) totalTris += countTriangles(g);
+        for (FbxNode g : s.geometries) {
+            if (corruptPart(g) > 0.4f) {
+                System.out.println("[FbxParser] skipping corrupt part " + nameOf(g)
+                        + " (" + corruptPart(g) + " OOB corner ratio)");
+                continue;
+            }
+            totalTris += countTriangles(g);
+        }
         Model m = new Model(totalTris);
 
         int triBase = 0;
         FbxNode first = s.geometries.get(0);
-        boolean firstSkin = s.skinByGeom.containsKey(idOf(first));
+        // Skin assembly assumes a single geometry carries the whole (skinned)
+        // mesh. Multi-part exports (one node per body part) bind clusters to a
+        // small control-point set only, so skinning them would index arrays out
+        // of range during render; keep those models on the static bind pose
+        // (nothing animates in-game), which renders exactly like bind pose.
+        boolean firstSkin = s.skinByGeom.containsKey(idOf(first))
+                && countTriangles(first) == totalTris;
         for (int gi = 0; gi < s.geometries.size(); gi++) {
             FbxNode g = s.geometries.get(gi);
+            if (corruptPart(g) > 0.4f) continue;
             FbxNode model = null;
             Long owner = s.ownerModelByGeom.get(idOf(g));
             if (owner != null) {
@@ -495,18 +532,43 @@ public final class FbxParser {
             m.b = (float) tint[2];
         }
 
-        String texFile = null;
+        int tex = -1;
         for (String v : s.textureByMaterial.values()) {
-            if (v != null) { texFile = v; break; }
-        }
-        if (texFile != null) {
+            if (v == null) continue;
+            String resolved = resolveTexturePath(v);
             try {
-                m.tex = ModelLoader.loadTexture(resolveTexturePath(texFile), dir);
-            } catch (Exception ignore) {
-                m.tex = -1;
+                tex = ModelLoader.loadTexture(resolved, dir);
+            } catch (Exception e) {
+                tex = -1;
             }
+            if (tex >= 0) {
+                System.out.println("[FbxParser] texture from material: " + v + " -> " + resolved);
+                break;
+            }
+            // Don't fail silently: a missing skin is exactly the kind of
+            // thing that later shows up as a flat, wrong-textured model.
+            System.out.println("[FbxParser] material texture NOT found near FBX: "
+                    + resolved + " (dir=" + dir + ")");
         }
+        if (tex < 0) {
+            tex = loadFallbackTexture(dir);
+            if (tex >= 0) System.out.println("[FbxParser] texture fallback (first PNG next to FBX)");
+        }
+        m.tex = tex;
         return m;
+    }
+
+    /** When no material texture resolves, use the first PNG next to the FBX. */
+    private static int loadFallbackTexture(File dir) {
+        if (dir == null) return -1;
+        File[] any = dir.listFiles((d, name) -> name.toLowerCase(java.util.Locale.ROOT).endsWith(".png"));
+        if (any == null || any.length == 0) return -1;
+        java.util.Arrays.sort(any, (a, b) -> a.getName().compareTo(b.getName()));
+        try {
+            return ModelLoader.loadTexture(any[0].getName(), dir);
+        } catch (Exception ignore) {
+            return -1;
+        }
     }
 
     private static String resolveTexturePath(String file) {
@@ -515,6 +577,42 @@ public final class FbxParser {
         int back = p.lastIndexOf('\\');
         if (back > 0) p = p.substring(back + 1); // keep just the filename to search next to fbx
         return p;
+    }
+
+    /**
+     * Fraction of polygon corners that reference vertices outside the part's own
+     * control-point array. Such faces are malformed (Blender-style merges that
+     * spill indices), render as clamped garbage, and should be dropped.
+     */
+    private static float corruptPart(FbxNode geom) {
+        int[] pi = childInts(geom, "PolygonVertexIndex");
+        double[] verts = childNums(geom, "Vertices");
+        if (verts.length == 0 || pi.length == 0) return 0f;
+        int nControl = verts.length / 3;
+        int corners = 0;
+        int bad = 0;
+        int i = 0;
+        while (i < pi.length) {
+            int start = i;
+            while (i < pi.length && pi[i] >= 0) i++;
+            if (i >= pi.length) break;
+            int size = i - start + 1;
+            for (int c = 1; c + 1 < size; c++) {
+                for (int k = 0; k < 3; k++) {
+                    int local = k == 2 ? size - 1 : (k == 1 ? c : 0);
+                    int raw = pi[start + local];
+                    if (local == size - 1) raw = -raw - 1;
+                    if (Math.abs(raw) >= nControl) bad++;
+                    corners++;
+                }
+            }
+            i++;
+        }
+        return corners == 0 ? 0f : (float) bad / (float) corners;
+    }
+
+    private static String nameOf(FbxNode geom) {
+        return geom.props.size() > 1 ? String.valueOf(geom.props.get(1)) : String.valueOf(idOf(geom));
     }
 
     private static int countTriangles(FbxNode geom) {

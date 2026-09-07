@@ -43,6 +43,9 @@ public final class PlayerController {
     public boolean onGround = false;
     public boolean inWater = false;
 
+    /** Last input built this tick (network layer sends it to the server). */
+    public PlayerInput lastInput = new PlayerInput();
+
     public PlayerController(Level level) {
         this.sim = new PlayerSim(level);
         mirror();
@@ -87,6 +90,7 @@ public final class PlayerController {
         input.yawDelta = Mouse.getDX();
         input.pitchDelta = Mouse.getDY();
 
+        lastInput = input;
         sim.simulate(input);
         mirror();
     }

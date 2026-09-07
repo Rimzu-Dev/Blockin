@@ -19,10 +19,10 @@ namespace BlockinLauncher
 {
     public class LauncherSettings
     {
-        public string GamePath { get; set; } = @"D:\Games\Blockin";
-        public string SourcePath { get; set; } = @"D:\Games\Blockin Source";
-        public string BuildPath { get; set; } = @"D:\Games\Blockin";
-        public string NativesPath { get; set; } = @"D:\Games\Blockin\natives";
+        public string GamePath { get; set; } = string.Empty;
+        public string SourcePath { get; set; } = string.Empty;
+        public string BuildPath { get; set; } = string.Empty;
+        public string NativesPath { get; set; } = string.Empty;
         public bool ShowConsole { get; set; } = true;
         public bool EnableDebug { get; set; } = false;
         public List<string> JarFiles { get; set; } = new List<string> { "lwjgl.jar", "lwjgl_util.jar" };
@@ -101,7 +101,9 @@ namespace BlockinLauncher
             JarListBox.ItemsSource = JarFiles;
 
             LoadSettings();
+            
             isInitializing = false;
+            SaveSettings(); // Creates the file immediately on startup if missing
         }
 
         // --- HOOK WINDOW MESSAGES FOR TASKBAR CONSTRAINT ---
@@ -151,6 +153,8 @@ namespace BlockinLauncher
         // --- SETTINGS PERSISTENCE (JSON) ---
         private void LoadSettings()
         {
+            string baseDir = AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
+
             try
             {
                 if (File.Exists(settingsFilePath))
@@ -160,10 +164,11 @@ namespace BlockinLauncher
 
                     if (settings != null)
                     {
-                        GamePathTxt.Text = settings.GamePath;
-                        SourcePathTxt.Text = settings.SourcePath;
-                        BuildPathTxt.Text = settings.BuildPath;
-                        NativesPathTxt.Text = settings.NativesPath;
+                        GamePathTxt.Text = string.IsNullOrWhiteSpace(settings.GamePath) ? baseDir : settings.GamePath;
+                        SourcePathTxt.Text = settings.SourcePath ?? string.Empty;
+                        BuildPathTxt.Text = string.IsNullOrWhiteSpace(settings.BuildPath) ? baseDir : settings.BuildPath;
+                        NativesPathTxt.Text = string.IsNullOrWhiteSpace(settings.NativesPath) ? Path.Combine(baseDir, "natives") : settings.NativesPath;
+                        
                         ShowConsoleChk.IsChecked = settings.ShowConsole;
                         EnableDebugChk.IsChecked = settings.EnableDebug;
 
@@ -176,12 +181,21 @@ namespace BlockinLauncher
                 }
                 else
                 {
+                    GamePathTxt.Text = baseDir;
+                    SourcePathTxt.Text = string.Empty;
+                    BuildPathTxt.Text = baseDir;
+                    NativesPathTxt.Text = Path.Combine(baseDir, "natives");
+
                     JarFiles.Add("lwjgl.jar");
                     JarFiles.Add("lwjgl_util.jar");
                 }
             }
             catch (Exception ex)
             {
+                GamePathTxt.Text = baseDir;
+                SourcePathTxt.Text = string.Empty;
+                BuildPathTxt.Text = baseDir;
+                NativesPathTxt.Text = Path.Combine(baseDir, "natives");
                 LogOutput($"[WARNING] Failed to load settings: {ex.Message}");
             }
         }

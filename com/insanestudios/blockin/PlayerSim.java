@@ -98,12 +98,24 @@ public final class PlayerSim {
         return bb.y0 + 1.62F;
     }
 
-    /** Applies a mouse-look delta (same scaling as the old client-side turn). */
+    /** Applies a mouse-look delta (same scaling as the old client-side turn).
+     *  Yaw is normalized into [0, 360) after every update so it can never drift
+     *  to hundreds/thousands of degrees (which would be sent over the network,
+     *  displayed in the debug overlay, and baked into saves); pitch stays clamped
+     *  to [-90, 90]. */
     public void turn(float dx, float dy) {
         yRot += dx * 0.15F;
+        yRot = normalizeYaw(yRot);
         xRot -= dy * 0.15F;
         if (xRot < -90.0F) xRot = -90.0F;
         if (xRot > 90.0F) xRot = 90.0F;
+    }
+
+    /** Normalizes an arbitrary yaw into the [0, 360) range. */
+    public static float normalizeYaw(float y) {
+        y %= 360.0F;
+        if (y < 0.0F) y += 360.0F;
+        return y;
     }
 
     /** Restores a position saved by {@code Level.setSavedPlayer} (x/z center,
@@ -115,7 +127,7 @@ public final class PlayerSim {
             return;
         }
         setPos(x, feetY + 0.9F, z);
-        yRot = yaw;
+        yRot = normalizeYaw(yaw);
         xRot = pitch;
         xd = 0.0F;
         yd = 0.0F;

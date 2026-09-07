@@ -27,11 +27,14 @@ public final class MainMenu {
     public static final int PLAY = 1;
     public static final int QUIT = 2;
     public static final int NEW_WORLD = 3;
+    public static final int JOIN = 4;
+    public static final int HOST_GAME = 5;
 
     private enum MenuState {
         MAIN_MENU,
         SAVE_SELECT,
-        SETTINGS
+        SETTINGS,
+        MULTIPLAYER
     }
 
     private static MenuState currentState = MenuState.MAIN_MENU;
@@ -39,13 +42,18 @@ public final class MainMenu {
     private static int choice = NONE;
     private static boolean wasDown = false;
     private static String[] saveSlots = new String[0];
+    private static final Map<String, Long> saveSeedCache = new HashMap<>();
     private static String selectedSlot = null;
 
-    private static final String[] MAIN_OPTIONS = {"PLAY", "SETTINGS", "QUIT"};
+    private static final String[] MAIN_OPTIONS = {"PLAY", "SETTINGS", "MULTIPLAYER", "QUIT"};
 
     // Settings state
     private static boolean farRenderDistance = true;
     private static int guiScale = 2;
+
+    // Multiplayer screen state
+    private static final StringBuilder joinAddressInput = new StringBuilder("localhost:25566");
+    private static String joinErrorMsg = null;
 
     private static int dirtTex = 0;
     private static int titleTex = 0;
@@ -78,6 +86,21 @@ public final class MainMenu {
         return selectedSlot;
     }
 
+    /** The "host:port" text typed on the MULTIPLAYER screen. */
+    public static String joinAddress() {
+        return joinAddressInput.toString();
+    }
+
+    /** Shows a connection-failure message on the MULTIPLAYER screen and
+     *  reopens the menu on it, so the player sees why the join failed. */
+    public static void setJoinError(String msg) {
+        joinErrorMsg = msg;
+        active = true;
+        currentState = MenuState.MULTIPLAYER;
+        choice = NONE;
+        wasDown = false;
+    }
+
     public static void startGame() {
         active = false;
         choice = NONE;
@@ -107,9 +130,22 @@ public final class MainMenu {
         choice = NONE;
         wasDown = false;
         selectedSlot = null;
-        saveSlots = SaveManager.listSaves();
+        refreshSaves();
         SaveManager.migrateLegacySave();
         Mouse.setGrabbed(false);
+    }
+
+    /** Snapshot of the save list + seeds, read once when entering the
+     *  SAVE_SELECT screen. The old code re-ran {@link SaveManager#listSaves()}
+     *  and {@link SaveManager#seedOf} on every tick AND every rendered frame,
+     *  and with many slots in an OneDrive Documents folder that disk I/O
+     *  (tens of ms per scan) made the whole game unresponsive. */
+    private static void refreshSaves() {
+        saveSlots = SaveManager.listSaves();
+        saveSeedCache.clear();
+        for (String name : saveSlots) {
+            saveSeedCache.put(name, SaveManager.seedOf(name));
+        }
     }
 
     public static void pollInput() {
@@ -143,6 +179,7 @@ public final class MainMenu {
             case MAIN_MENU -> pollMainMenuInput(cx, h, mx, my, down);
             case SAVE_SELECT -> pollSaveSelectInput(cx, h, mx, my, down);
             case SETTINGS -> pollSettingsInput(cx, h, mx, my, down);
+            case MULTIPLAYER -> pollMultiplayerInput(cx, h, mx, my, down);
         }
 
         wasDown = down;
@@ -152,11 +189,12 @@ public final class MainMenu {
         int bw = 280;
         int bh = 46;
         int gap = 14;
-        int totalHeightGroup = 60 + 12 + 18 + 24 + (3 * bh) + (2 * gap);
+        int totalHeightGroup = 60 + 12 + 18 + 24 + (4 * bh) + (3 * gap);
         int topAnchor = (h - totalHeightGroup) / 2;
         int startY = topAnchor + 105;
 
         if (Keyboard.isKeyDown(Keyboard.KEY_RETURN)) {
+            refreshSaves();
             currentState = MenuState.SAVE_SELECT;
             return;
         }
@@ -166,9 +204,16 @@ public final class MainMenu {
                 int by = startY + i * (bh + gap);
                 if (mx >= cx - bw / 2 && mx <= cx + bw / 2 && my >= by && my <= by + bh) {
                     switch (i) {
-                        case 0 -> currentState = MenuState.SAVE_SELECT;
+                        case 0 -> {
+                            refreshSaves();
+                            currentState = MenuState.SAVE_SELECT;
+                        }
                         case 1 -> currentState = MenuState.SETTINGS;
-                        case 2 -> choose(QUIT);
+                        case 2 -> {
+                            currentState = MenuState.MULTIPLAYER;
+                            joinErrorMsg = null;
+                        }
+                        case 3 -> choose(QUIT);
                         default -> {}
                     }
                 }
@@ -177,7 +222,6 @@ public final class MainMenu {
     }
 
     private static void pollSaveSelectInput(int cx, int h, int mx, int my, boolean down) {
-        saveSlots = SaveManager.listSaves();
         int bw = 320;
         int bh = 46;
         int gap = 14;
@@ -231,8 +275,59 @@ public final class MainMenu {
         }
     }
 
+    /** Text field is always focused on this screen (it's the only field),
+     *  so every printable key/backspace/enter goes straight to the address. */
+    private static void pollMultiplayerInput(int cx, int h, int mx, int my, boolean down) {
+        while (Keyboard.next()) {
+            if (!Keyboard.getEventKeyState()) continue; // key-up, ignore
+            int key = Keyboard.getEventKey();
+            char c = Keyboard.getEventCharacter();
+            if (key == Keyboard.KEY_BACK) {
+                if (joinAddressInput.length() > 0) {
+                    joinAddressInput.deleteCharAt(joinAddressInput.length() - 1);
+                }
+            } else if (key == Keyboard.KEY_RETURN) {
+                joinErrorMsg = null;
+                choose(JOIN);
+                return;
+            } else if (c >= 32 && c < 127 && joinAddressInput.length() < 40) {
+                joinAddressInput.append(c);
+            }
+        }
+
+        int bw = 320;
+        int bh = 46;
+        int gap = 14;
+        int fieldY = h / 2 - 90;
+        int joinY = fieldY + bh + gap + 20;
+        int hostY = joinY + bh + gap;
+        int backY = hostY + bh + gap;
+
+        if (down && !wasDown) {
+            if (mx >= cx - bw / 2 && mx <= cx + bw / 2 && my >= joinY && my <= joinY + bh) {
+                joinErrorMsg = null;
+                choose(JOIN);
+                return;
+            }
+            if (mx >= cx - bw / 2 && mx <= cx + bw / 2 && my >= hostY && my <= hostY + bh) {
+                joinErrorMsg = null;
+                choose(HOST_GAME);
+                return;
+            }
+            if (mx >= cx - bw / 2 && mx <= cx + bw / 2 && my >= backY && my <= backY + bh) {
+                currentState = MenuState.MAIN_MENU;
+            }
+        }
+    }
+
     private static void choose(int c) {
         choice = c;
+        wasDown = false;
+    }
+
+    /** Clears a pending choice so a failed join isn't retried next tick. */
+    public static void clearChoice() {
+        choice = NONE;
         wasDown = false;
     }
 
@@ -255,6 +350,7 @@ public final class MainMenu {
                 case MAIN_MENU -> renderMainMenu(cx, h, mx, my);
                 case SAVE_SELECT -> renderSaveSelect(cx, h, mx, my);
                 case SETTINGS -> renderSettings(cx, h, mx, my);
+                case MULTIPLAYER -> renderMultiplayer(cx, h, mx, my);
             }
         }
 
@@ -285,7 +381,7 @@ public final class MainMenu {
         int bh = 46;
         int gap = 14;
         
-        int totalHeightGroup = 60 + 12 + 18 + 24 + (3 * bh) + (2 * gap);
+        int totalHeightGroup = 60 + 12 + 18 + 24 + (4 * bh) + (3 * gap);
         int topAnchor = (h - totalHeightGroup) / 2;
 
         // Modern Title & Subtitle
@@ -303,7 +399,6 @@ public final class MainMenu {
     }
 
     private static void renderSaveSelect(int cx, int h, int mx, int my) {
-        saveSlots = SaveManager.listSaves();
         int bw = 320;
         int bh = 46;
         int gap = 14;
@@ -315,7 +410,7 @@ public final class MainMenu {
         for (int i = 0; i < rows; i++) {
             int by = startY + i * (bh + gap);
             String label = saveSlots[i];
-            long seed = SaveManager.seedOf(label);
+            long seed = saveSeedCache.getOrDefault(label, 0L);
             if (seed != 0) label = label + " \u00B7 " + seed;
             boolean hover = mx >= cx - bw / 2 && mx <= cx + bw / 2 && my >= by && my <= by + bh;
             drawModernButtonText(label, cx - bw / 2, by, bw, bh, 15, hover, true);
@@ -352,6 +447,39 @@ public final class MainMenu {
         drawModernButtonText("Sound Settings", cx - bw / 2, opt3Y, bw, bh, 15, soundHover, true);
 
         int backY = opt3Y + bh + 20;
+        boolean backHover = mx >= cx - bw / 2 && mx <= cx + bw / 2 && my >= backY && my <= backY + bh;
+        drawModernButtonText("Back", cx - bw / 2, backY, bw, bh, 15, backHover, true);
+    }
+
+    private static void renderMultiplayer(int cx, int h, int mx, int my) {
+        int bw = 320;
+        int bh = 46;
+        int gap = 14;
+        int fieldY = h / 2 - 90;
+        int joinY = fieldY + bh + gap + 20;
+        int hostY = joinY + bh + gap;
+        int backY = hostY + bh + gap;
+
+        drawDynamicText("MULTIPLAYER", cx, h / 4, 26, new Color(0, 210, 255), true);
+        drawDynamicText("Enter host:port to join, or host your own world",
+                cx, fieldY - 24, 12, new Color(150, 150, 160), true);
+
+        // Address text field (always focused; blinking caret)
+        drawModernBox(cx - bw / 2, fieldY, bw, bh, false, true);
+        String shown = joinAddressInput.toString();
+        if ((System.currentTimeMillis() / 500) % 2 == 0) shown = shown + "_";
+        drawDynamicText(shown, cx, fieldY + bh / 2 - 8, 16, Color.WHITE, true);
+
+        boolean joinHover = mx >= cx - bw / 2 && mx <= cx + bw / 2 && my >= joinY && my <= joinY + bh;
+        drawModernButtonText("JOIN GAME", cx - bw / 2, joinY, bw, bh, 15, joinHover, true);
+
+        boolean hostHover = mx >= cx - bw / 2 && mx <= cx + bw / 2 && my >= hostY && my <= hostY + bh;
+        drawModernButtonText("HOST & PLAY", cx - bw / 2, hostY, bw, bh, 15, hostHover, true);
+
+        if (joinErrorMsg != null) {
+            drawDynamicText(joinErrorMsg, cx, backY - gap - 18, 12, new Color(255, 90, 90), true);
+        }
+
         boolean backHover = mx >= cx - bw / 2 && mx <= cx + bw / 2 && my >= backY && my <= backY + bh;
         drawModernButtonText("Back", cx - bw / 2, backY, bw, bh, 15, backHover, true);
     }

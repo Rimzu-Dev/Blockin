@@ -31,41 +31,106 @@ public final class ModelLoader {
     private ModelLoader() {
     }
 
-    /** Scan Mods/Models, load every *.fbx found. Never throws. */
+    /** Scan every model root (Mods/Models plus a sibling "Models" in-game root),
+     *  load every *.fbx found. Never throws. */
     public static void warmUp() {
         loadCount = 0;
         models.clear();
+        File base = findModsDir();
         try {
-            File dir = new File(findModsDir(), "Models");
-            if (!dir.isDirectory()) {
-                System.out.println("[ModelLoader] no Mods/Models dir: " + dir);
-                return;
-            }
-            for (File fbx : findFbx(dir)) {
-                try {
-                    load(fbx);
-                } catch (Exception ex) {
-                    System.out.println("[ModelLoader] failed " + fbx.getName() + ": " + ex);
-                }
-            }
+            addModels(new File(base, "Models"));
+            File parentRoot = base.getParentFile();
+            if (parentRoot != null) addModels(new File(parentRoot, "Models"));
         } catch (Exception ex) {
             System.out.println("[ModelLoader] warmUp error: " + ex);
         }
         System.out.println("[ModelLoader] loaded " + loadCount + " model(s)");
     }
 
+    /** Loads every FBX under {@code dir} (recursively) into the catalog. */
+    private static void addModels(File dir) {
+        if (!dir.isDirectory()) return;
+        for (File fbx : findFbx(dir)) {
+            try {
+                load(fbx, dir);
+            } catch (Exception ex) {
+                System.out.println("[ModelLoader] failed " + fbx.getName() + ": " + ex);
+            }
+        }
+    }
+
     /** Loads one FBX and registers it under its relative name. */
     public static void load(File fbxFile) throws Exception {
+        load(fbxFile, new File(findModsDir(), "Models"));
+    }
+
+    /** Loads one FBX relative to {@code relBase} and registers it under the
+     *  resulting name. */
+    public static void load(File fbxFile, File relBase) throws Exception {
         Model m = FbxParser.toModel(FbxParser.parse(fbxFile), fbxFile.getParentFile());
-        String name = relativeName(fbxFile);
+        String name = relativeName(fbxFile, relBase);
         if (m.triangleCount() <= 0) {
             System.out.println("[ModelLoader] " + name + ": no triangles (empty mesh)");
             return;
         }
         models.put(name, m);
+        m.feetY = lowestY(m);
+        m.feetY = anchorFeetY(fbxFile, m.feetY);
+        m.heightY = highestY(m) - m.feetY;
         loadCount++;
         System.out.println("[ModelLoader] + " + name + " (" + m.triangleCount() + " tris, tex=" + m.tex
-                + ", bones=" + m.boneCount() + ")");
+                + ", bones=" + m.boneCount() + " feetY=" + m.feetY + " heightY=" + m.heightY + ")");
+    }
+
+    /** Lowest vertex Y over both the corner mesh and the bind-control points. */
+    private static float lowestY(Model m) {
+        float minY = Float.MAX_VALUE;
+        for (int i = 0; i < m.verts.length; i += 3) {
+            minY = Math.min(minY, m.verts[i + 1]);
+        }
+        if (m.skinVerts != null) {
+            for (int i = 0; i < m.skinVerts.length; i += 3) {
+                minY = Math.min(minY, m.skinVerts[i + 1]);
+            }
+        }
+        return minY == Float.MAX_VALUE ? 0f : minY;
+    }
+
+    /**
+     * Optional per-model feet override: a text file named {@code <model>.fbx.anchor}
+     * next to the FBX may contain a single Y value (in FBX units) used as the
+     * standing floor. Needed when stray geometry (e.g. robes/capes) hangs below
+     * the character's actual feet and would otherwise float the avatar.
+     */
+    private static float anchorFeetY(File fbxFile, float fallback) {
+        File anchor = new File(fbxFile.getParentFile(), fbxFile.getName() + ".anchor");
+        if (!anchor.isFile()) return fallback;
+        try {
+            java.util.Scanner sc = new java.util.Scanner(anchor);
+            if (sc.hasNextDouble()) {
+                float v = (float) sc.nextDouble();
+                sc.close();
+                System.out.println("[ModelLoader] " + fbxFile.getName() + ": feet anchored to " + v);
+                return v;
+            }
+            sc.close();
+        } catch (Exception ignore) {
+        }
+        return fallback;
+    }
+
+    /** Highest vertex Y over both the corner mesh and the bind-control points. */
+    private static float highestY(Model m) {
+        float maxY = -Float.MAX_VALUE;
+        for (int i = 0; i < m.verts.length; i += 3) {
+            maxY = Math.max(maxY, m.verts[i + 1]);
+        }
+        if (m.skinVerts != null) {
+            for (int i = 0; i < m.skinVerts.length; i += 3) {
+                maxY = Math.max(maxY, m.skinVerts[i + 1]);
+            }
+        }
+        return maxY == -Float.MAX_VALUE ? 1f : maxY;
     }
 
     /**
@@ -108,10 +173,14 @@ public final class ModelLoader {
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
                 int p = pixels[y * w + x];
-                buf.put((byte) ((p >> 16) & 0xFF));
-                buf.put((byte) ((p >> 8) & 0xFF));
-                buf.put((byte) (p & 0xFF));
-                buf.put((byte) ((p >> 24) & 0xFF));
+                int a = (p >> 24) & 0xFF;
+                int r = (p >> 16) & 0xFF, g = (p >> 8) & 0xFF, b = p & 0xFF;
+                if (a < 26) { r = 150; g = 150; b = 150; } // transparent padding -> neutral gray
+                buf.put((byte) r);
+                buf.put((byte) g);
+                buf.put((byte) b);
+                buf.put((byte) 0xFF); // force opaque: the world's alpha test (GL_GREATER 0.1)
+                // otherwise discards whole faces whose UVs land on transparent cells.
             }
         }
         buf.flip();
@@ -141,11 +210,10 @@ public final class ModelLoader {
         GL11.glPopMatrix();
     }
 
-    private static String relativeName(File fbx) {
-        File mods = new File(findModsDir(), "Models");
+    private static String relativeName(File fbx, File base) {
         String abs = fbx.getAbsolutePath();
-        String base = mods.getAbsolutePath() + File.separator;
-        String rel = abs.startsWith(base) ? abs.substring(base.length()) : fbx.getName();
+        String basePath = base.getAbsolutePath() + File.separator;
+        String rel = abs.startsWith(basePath) ? abs.substring(basePath.length()) : fbx.getName();
         if (rel.toLowerCase(java.util.Locale.ROOT).endsWith(".fbx")) {
             rel = rel.substring(0, rel.length() - 4);
         }

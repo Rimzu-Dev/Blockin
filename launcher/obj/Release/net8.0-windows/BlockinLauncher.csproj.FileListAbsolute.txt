@@ -17,3 +17,4 @@ D:\Games\Blockin Source\launcher\obj\Release\net8.0-windows\refint\BlockinLaunch
 D:\Games\Blockin Source\launcher\obj\Release\net8.0-windows\BlockinLauncher.pdb
 D:\Games\Blockin Source\launcher\obj\Release\net8.0-windows\BlockinLauncher.genruntimeconfig.cache
 D:\Games\Blockin Source\launcher\obj\Release\net8.0-windows\ref\BlockinLauncher.dll
+D:\Games\Blockin Source\launcher\obj\Release\net8.0-windows\BlockinLauncher.sourcelink.json

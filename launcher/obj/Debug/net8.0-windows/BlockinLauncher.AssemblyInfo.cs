@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("BlockinLauncher")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+cf287a3c5012615735cdd60a36a6e0a4bf0022f4")]
 [assembly: System.Reflection.AssemblyProductAttribute("BlockinLauncher")]
 [assembly: System.Reflection.AssemblyTitleAttribute("BlockinLauncher")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

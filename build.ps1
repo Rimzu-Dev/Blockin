@@ -53,6 +53,15 @@ if (Test-Path $srcMods) {
     Copy-Merge $srcMods $dstMods
 }
 
+# 3b) Stage in-game Models tree (e.g. Models/Player.fbx) > game root, next to
+# Mods; warmUp scans this game-local "Models" root alongside Mods/Models.
+$srcModels = Join-Path $root "Models"
+$dstModels = Join-Path $game "Models"
+if (Test-Path $srcModels) {
+    Write-Host "=== Staging in-game models ==="
+    Copy-Merge $srcModels $dstModels
+}
+
 # 4) Natives (only if missing)
 if (-not (Test-Path (Join-Path $game "natives"))) {
     Write-Host "=== Staging natives ==="
