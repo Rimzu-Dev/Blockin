@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+     block.xml - single-block definition template
+     ------------------------------------------------------------------
+     Lives inside a zip mod at the path listed under a <block file="..."/>
+     entry in info.xml. The top/side/bottom/icon png files live in the
+     SAME folder as this file.
+-->
+<block>
+    <!-- Numeric block id. If omitted or already taken, one is auto-assigned. -->
+    <id>3</id>
+
+    <!-- Block display name. -->
+    <name>My Block</name>
+
+    <!-- Face texture files (relative to this block.xml). -->
+    <top>top.png</top>
+    <side>side.png</side>
+    <bottom>bottom.png</bottom>
+
+    <!-- Optional HUD icon. Falls back to the side face if absent. -->
+    <icon>icon.png</icon>
+</block>

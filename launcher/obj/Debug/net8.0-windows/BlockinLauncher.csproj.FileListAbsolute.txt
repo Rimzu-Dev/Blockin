@@ -1,0 +1,24 @@
+D:\Games\Blockin\Launcher\BlockinLauncher.exe
+D:\Games\Blockin\Launcher\BlockinLauncher.deps.json
+D:\Games\Blockin\Launcher\BlockinLauncher.runtimeconfig.json
+D:\Games\Blockin\Launcher\BlockinLauncher.dll
+D:\Games\Blockin\Launcher\BlockinLauncher.pdb
+D:\Games\Blockin Source\launcher\obj\Debug\net8.0-windows\MainWindow.baml
+D:\Games\Blockin Source\launcher\obj\Debug\net8.0-windows\MainWindow.g.cs
+D:\Games\Blockin Source\launcher\obj\Debug\net8.0-windows\App.g.cs
+D:\Games\Blockin Source\launcher\obj\Debug\net8.0-windows\BlockinLauncher_MarkupCompile.cache
+D:\Games\Blockin Source\launcher\obj\Debug\net8.0-windows\BlockinLauncher.g.resources
+D:\Games\Blockin Source\launcher\obj\Debug\net8.0-windows\BlockinLauncher.GeneratedMSBuildEditorConfig.editorconfig
+D:\Games\Blockin Source\launcher\obj\Debug\net8.0-windows\BlockinLauncher.AssemblyInfoInputs.cache
+D:\Games\Blockin Source\launcher\obj\Debug\net8.0-windows\BlockinLauncher.AssemblyInfo.cs
+D:\Games\Blockin Source\launcher\obj\Debug\net8.0-windows\BlockinLauncher.csproj.CoreCompileInputs.cache
+D:\Games\Blockin Source\launcher\obj\Debug\net8.0-windows\BlockinLauncher.dll
+D:\Games\Blockin Source\launcher\obj\Debug\net8.0-windows\refint\BlockinLauncher.dll
+D:\Games\Blockin Source\launcher\obj\Debug\net8.0-windows\BlockinLauncher.pdb
+D:\Games\Blockin Source\launcher\obj\Debug\net8.0-windows\BlockinLauncher.genruntimeconfig.cache
+D:\Games\Blockin Source\launcher\obj\Debug\net8.0-windows\ref\BlockinLauncher.dll
+D:\Games\Blockin Source\launcher\staging\BlockinLauncher.exe
+D:\Games\Blockin Source\launcher\staging\BlockinLauncher.deps.json
+D:\Games\Blockin Source\launcher\staging\BlockinLauncher.runtimeconfig.json
+D:\Games\Blockin Source\launcher\staging\BlockinLauncher.dll
+D:\Games\Blockin Source\launcher\staging\BlockinLauncher.pdb

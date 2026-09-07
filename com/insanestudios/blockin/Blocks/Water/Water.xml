@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Core built-in block definition (drives the atlas + registration). -->
+<block>
+    <id>3</id>
+    <name>Water</name>
+    <description>Clear, cool water. It flows downhill and you can swim in it.</description>
+    <type>liquid</type>
+    <texture>water.png</texture>
+    <soundStep>Water</soundStep>
+    <soundPlace>Water</soundPlace>
+    <soundBreak>Water</soundBreak>
+</block>

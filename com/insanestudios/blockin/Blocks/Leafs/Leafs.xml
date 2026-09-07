@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Core built-in block definition (drives the atlas + registration). -->
+<block>
+    <id>8</id>
+    <name>Leaves</name>
+    <description>Dappled green leaves, gently rustling in the breeze.</description>
+    <type>transparent</type>
+    <texture>Leafs.png</texture>
+    <soundStep>Grass</soundStep>
+    <soundPlace>Grass</soundPlace>
+    <soundBreak>Grass</soundBreak>
+</block>

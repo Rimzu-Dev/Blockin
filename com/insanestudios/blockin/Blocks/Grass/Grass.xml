@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Core built-in block definition (drives the atlas + registration). -->
+<block>
+    <id>2</id>
+    <name>Grass</name>
+    <description>A living green carpet rolled out over the soil.</description>
+    <type>Nature</type>
+    <top>top.png</top>
+    <side>side.png</side>
+    <bottom>bottom.png</bottom>
+    <soundStep>Grass</soundStep>
+    <soundPlace>Grass</soundPlace>
+    <soundBreak>Grass</soundBreak>
+</block>

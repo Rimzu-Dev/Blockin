@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+     info.xml - mod manifest template
+     ------------------------------------------------------------------
+     Place this file at the ROOT of your .zip mod. Put the zip itself in
+     the Mods/ folder of the game.
+
+     Every block you ship needs a block.xml + its face textures.
+     Copy the Planks block at Mods/Blocks/Planks as a starting point.
+     Example block folder inside a zip:
+       Blocks/MyBlock/block.xml
+       Blocks/MyBlock/top.png
+       Blocks/MyBlock/side.png
+       Blocks/MyBlock/bottom.png
+       Blocks/MyBlock/icon.png
+
+     Slashes can be either "\" or "/"; both are accepted in file paths.
+-->
+<mod>
+    <!-- Display name of the mod (shown in the launcher/game logs). -->
+    <name>My Mod</name>
+
+    <!-- Version of the mod itself. -->
+    <version>1.0</version>
+
+    <!-- Highest game version this mod supports. -->
+    <maxVersion>0.29</maxVersion>
+
+    <!--
+        One <block file="..."/> entry per block, pointing at the block.xml
+        files inside this zip.
+    -->
+    <block file="Blocks\MyBlock\block.xml"/>
+    <block file="Blocks\MySecondBlock\block.xml"/>
+</mod>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Core built-in block definition (drives the atlas + registration). -->
+<block>
+    <id>5</id>
+    <name>Sand</name>
+    <description>Fine golden sand, warm from the sun.</description>
+    <type>solid</type>
+    <texture>sand.png</texture>
+    <soundStep>Sand</soundStep>
+    <soundPlace>Sand</soundPlace>
+    <soundBreak>Sand</soundBreak>
+</block>

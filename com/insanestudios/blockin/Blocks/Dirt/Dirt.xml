@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Core built-in block definition (drives the atlas + registration). -->
+<block>
+    <id>4</id>
+    <name>Dirt</name>
+    <description>Loosely packed soil, always eager to grow something.</description>
+    <type>Nature</type>
+    <texture>dirt.png</texture>
+    <soundStep>Dirt</soundStep>
+    <soundPlace>Dirt</soundPlace>
+    <soundBreak>Dirt</soundBreak>
+</block>
